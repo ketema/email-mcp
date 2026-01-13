@@ -422,9 +422,9 @@ class TestEmailMarkReadContract:
 
         connected_server.email_mark_read(folder="INBOX", uids=[100])
 
-        # Verify no delete/expunge methods called
-        mock_client.delete_messages.assert_not_called() if hasattr(mock_client, 'delete_messages') else None
-        mock_client.expunge.assert_not_called() if hasattr(mock_client, 'expunge') else None
+        # Verify no delete/expunge methods called on underlying IMAP client
+        mock_client.delete_messages.assert_not_called()
+        mock_client.expunge.assert_not_called()
 
     def test_mark_read_uid_not_found_error(self, connected_server, mock_imap_client):
         """
