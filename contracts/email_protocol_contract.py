@@ -31,6 +31,13 @@ class EmailProtocol(Enum):
     POP3 = auto()
 
 
+class TLSRequirement(Enum):
+    """TLS version requirements."""
+
+    TLS_1_2 = auto()  # Minimum acceptable
+    TLS_1_3 = auto()  # Preferred
+
+
 @dataclass(frozen=True)
 class EmailAddress:
     """Structured email address."""
@@ -89,6 +96,8 @@ class ConnectionStatus:
     protocol: EmailProtocol
     server: str
     uptime_seconds: int
+    tls_version: str  # e.g., "TLSv1.3"
+    cipher: str  # e.g., "TLS_AES_256_GCM_SHA384"
 
 
 # =============================================================================
@@ -141,6 +150,26 @@ class ConnectionFailedError(EmailMCPError):
     """
 
     code = "CONNECTION_FAILED"
+
+
+class TLSRequiredError(EmailMCPError):
+    """
+    ERRORS-STARTUP-05: Server does not support TLS 1.2+.
+
+    RECOVERY: Fatal. Server must be configured to support TLS 1.2 or higher.
+    """
+
+    code = "TLS_REQUIRED"
+
+
+class CertificateVerificationError(EmailMCPError):
+    """
+    ERRORS-STARTUP-06: Server certificate validation failed.
+
+    RECOVERY: Fatal. Server certificate must be valid and trusted by system CA.
+    """
+
+    code = "CERTIFICATE_VERIFICATION_FAILED"
 
 
 class NotConnectedError(EmailMCPError):
@@ -210,6 +239,8 @@ class StartupContract(Protocol):
                     under key "email-mcp/{account_id}"
     PRE-STARTUP-03: MCP process has entitlement to invoke biosecret
     PRE-STARTUP-04: Network connectivity to mail server is available
+    PRE-STARTUP-05: Mail server supports TLS 1.2 or higher
+    PRE-STARTUP-06: Mail server certificate is valid and trusted
 
     POST-STARTUP-01: On successful biometric auth, credentials exist in memory
     POST-STARTUP-02: IMAP or POP3 connection is established and authenticated
@@ -220,12 +251,16 @@ class StartupContract(Protocol):
                     never written to disk, environment variables, or logs
     INV-STARTUP-02 (Single Session): One authenticated session per process
     INV-STARTUP-03 (Fatal Errors): All startup errors terminate process
+    INV-STARTUP-04 (Transport Security): Connection MUST use TLS 1.2+. No fallback.
+    INV-STARTUP-05 (Certificate Validation): Server cert validated against system CA.
 
     ERRORS:
     - BIOSECRET_DENIED: User cancelled biometric prompt → process exits
     - BIOSECRET_NOT_FOUND: No credentials under expected key → process exits
     - AUTH_FAILED: Server rejected credentials → process exits
     - CONNECTION_FAILED: Network unreachable → process exits
+    - TLS_REQUIRED: Server doesn't support TLS 1.2+ → process exits
+    - CERTIFICATE_VERIFICATION_FAILED: Invalid certificate → process exits
     """
 
     pass
@@ -413,6 +448,10 @@ INV-GLOBAL-07 (Process Termination Clears Credentials): On process exit
 
 INV-GLOBAL-08 (Single Connection): One mail server connection per process.
              No multiplexing, no connection pooling.
+
+INV-GLOBAL-09 (Transport Security): ALL connections MUST use TLS 1.2+.
+             Plaintext and SSL 3.0 FORBIDDEN. No config to disable.
+             Certificate verification uses system CA store.
 """
 
 
@@ -573,6 +612,19 @@ TEST_CASES = {
         "enforces": ["INV-GLOBAL-07"],
         "adversarial": True,
         "description": "Verify credentials not recoverable after process exit",
+    },
+    # TLS security tests
+    "test_startup_tls_required": {
+        "contract": "StartupContract",
+        "enforces": ["INV-STARTUP-04", "INV-GLOBAL-09"],
+        "adversarial": True,
+        "description": "Verify TLS 1.2+ required, no plaintext fallback",
+    },
+    "test_startup_certificate_validated": {
+        "contract": "StartupContract",
+        "enforces": ["INV-STARTUP-05"],
+        "adversarial": True,
+        "description": "Verify server certificate validated against system CA",
     },
 }
 

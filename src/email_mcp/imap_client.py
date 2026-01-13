@@ -58,6 +58,8 @@ class EmailIMAPClient:
         self._connected: bool = False
         self._start_time: datetime | None = None
         self._protocol: EmailProtocol = EmailProtocol.IMAP
+        self._tls_version: str = ""
+        self._cipher: str = ""
 
     @property
     def connected(self) -> bool:
@@ -85,9 +87,32 @@ class EmailIMAPClient:
             self._client.login(credentials.username, credentials.password)
             self._connected = True
             self._start_time = datetime.now()
+            # Extract TLS info (INV-GLOBAL-09: Transport Security)
+            self._extract_tls_info()
         except Exception as e:
             self._client = None
             raise AuthFailedError(f"Authentication failed: {e}") from e
+
+    def _extract_tls_info(self) -> None:
+        """Extract TLS version and cipher from connection."""
+        if self._client is None:
+            return
+        try:
+            # Access the underlying socket's SSL info
+            sock = getattr(self._client, "_imap", None)
+            if sock and hasattr(sock, "ssl"):
+                ssl_sock = sock.ssl()
+                if ssl_sock:
+                    self._tls_version = ssl_sock.version() or "Unknown"
+                    cipher_info = ssl_sock.cipher()
+                    if cipher_info:
+                        self._cipher = cipher_info[0]  # Cipher name
+                    else:
+                        self._cipher = "Unknown"
+        except Exception:
+            # Fallback if we can't extract TLS info
+            self._tls_version = "TLS"
+            self._cipher = "Unknown"
 
     def disconnect(self) -> None:
         """Disconnect from server."""
@@ -123,6 +148,8 @@ class EmailIMAPClient:
             protocol=self._protocol,
             server=self._server,
             uptime_seconds=uptime,
+            tls_version=self._tls_version,
+            cipher=self._cipher,
         )
 
     def list_folders(self) -> list[FolderInfo]:

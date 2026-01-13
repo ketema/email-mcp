@@ -15,6 +15,7 @@ from contracts.email_protocol_contract import (
     AuthFailedError,
     BiosecretDeniedError,
     BiosecretNotFoundError,
+    CertificateVerificationError,
     ConnectionFailedError,
     ConnectionStatus,
     EmailAddress,
@@ -33,12 +34,15 @@ from contracts.email_protocol_contract import (
     NotConnectedError,
     # Contracts (Protocols)
     StartupContract,
+    TLSRequiredError,
+    TLSRequirement,
     UidNotFoundError,
 )
 
 __all__ = [
     # Domain Types
     "EmailProtocol",
+    "TLSRequirement",
     "EmailAddress",
     "Attachment",
     "EmailMessage",
@@ -50,6 +54,8 @@ __all__ = [
     "BiosecretNotFoundError",
     "AuthFailedError",
     "ConnectionFailedError",
+    "TLSRequiredError",
+    "CertificateVerificationError",
     "NotConnectedError",
     "FolderNotFoundError",
     "InvalidRangeError",
@@ -93,6 +99,8 @@ def audit_contract_coverage() -> dict:
             "PRE-STARTUP-02",
             "PRE-STARTUP-03",
             "PRE-STARTUP-04",
+            "PRE-STARTUP-05",
+            "PRE-STARTUP-06",
             "POST-STARTUP-01",
             "POST-STARTUP-02",
             "POST-STARTUP-03",
@@ -100,10 +108,14 @@ def audit_contract_coverage() -> dict:
             "INV-STARTUP-01",
             "INV-STARTUP-02",
             "INV-STARTUP-03",
+            "INV-STARTUP-04",
+            "INV-STARTUP-05",
             "ERRORS: BIOSECRET_DENIED",
             "ERRORS: BIOSECRET_NOT_FOUND",
             "ERRORS: AUTH_FAILED",
             "ERRORS: CONNECTION_FAILED",
+            "ERRORS: TLS_REQUIRED",
+            "ERRORS: CERTIFICATE_VERIFICATION_FAILED",
         ]
     )
 
@@ -200,6 +212,7 @@ def audit_contract_coverage() -> dict:
             "INV-GLOBAL-06",
             "INV-GLOBAL-07",
             "INV-GLOBAL-08",
+            "INV-GLOBAL-09",
         ]
     )
 

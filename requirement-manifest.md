@@ -57,6 +57,7 @@
 |INV-GLOBAL-06|Explicit Mutation     |Fetch does not mutate state; mark-as-read requires explicit call         |
 |INV-GLOBAL-07|Process Lifecycle     |Process termination clears all credentials from memory                   |
 |INV-GLOBAL-08|Connection Model      |One mail server connection per process, no pooling                       |
+|INV-GLOBAL-09|Transport Security    |ALL connections MUST use TLS 1.2+. No plaintext. No fallback.            |
 
 -----
 
@@ -74,7 +75,8 @@ These ambiguities were identified during interrogation and resolved:
 |Fetch Scope         |All messages?                  |Date range + quantity + uid_gt filter. Agent tracks what it’s seen.        |
 |Connection Lifecycle|Per-call or persistent?        |stdio transport; connection persists for process lifetime                  |
 |Credential Flow     |Per-call credentials?          |biosecret at startup. Memory only. Crash = re-auth via biometric.          |
-|External Mutation   |Can we guarantee message count?|No. External clients can delete. We guarantee WE don’t delete.             |
+|External Mutation   |Can we guarantee message count?|No. External clients can delete. We guarantee WE don't delete.             |
+|Transport Security  |TLS required?                  |YES. TLS 1.2+ required. SSL 3.0 forbidden. No plaintext fallback.          |
 
 -----
 
