@@ -249,6 +249,8 @@ class EmailMCPServer:
                 protocol=EmailProtocol.IMAP,
                 server="",
                 uptime_seconds=0,
+                tls_version="",
+                cipher="",
             )
         return self._client.get_status()
 
