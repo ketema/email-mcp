@@ -367,39 +367,120 @@ class TestEmailFetchContract:
 class TestEmailMarkReadContract:
     """Tests for email_mark_read tool behavior."""
     
-    def test_mark_read_basic(self):
+    @reality
+    def test_mark_read_basic(self, real_server):
         """
         Contract: EmailMarkReadContract
         Enforces: POST-MARKREAD-01, POST-MARKREAD-04
-        
+
         Verify mark_read sets \\Seen flag on specified messages.
+
+        REALITY TEST: Uses actual Gmail IMAP connection.
         """
-        pytest.skip("Implementation pending")
+        # Get a message to mark as read
+        result = real_server.email_fetch(limit=1)
+        if not result["messages"]:
+            pytest.skip("No messages in inbox to test")
+
+        msg = result["messages"][0]
+        test_uid = msg.uid
+
+        # Mark as read
+        real_server.email_mark_read(folder="INBOX", uids=[test_uid])
+
+        # Fetch again and verify \\Seen flag present
+        result2 = real_server.email_fetch(limit=5)
+        msg_after = next((m for m in result2["messages"] if m.uid == test_uid), None)
+
+        assert msg_after is not None, (
+            f"test_mark_read_basic FAILED | "
+            f"POST-MARKREAD-01 violated | "
+            f"Expected: Message UID {test_uid} still exists | "
+            f"Actual: Message not found after mark_read | "
+            f"Guidance: mark_read MUST NOT delete messages"
+        )
+
+        assert "\\Seen" in msg_after.flags, (
+            f"test_mark_read_basic FAILED | "
+            f"POST-MARKREAD-04 violated | "
+            f"Expected: \\Seen flag present after mark_read | "
+            f"Actual: Flags are {msg_after.flags} | "
+            f"Guidance: mark_read MUST add \\Seen flag to message"
+        )
     
-    def test_mark_read_idempotent(self):
+    @reality
+    def test_mark_read_idempotent(self, real_server):
         """
         Contract: EmailMarkReadContract
         Enforces: INV-MARKREAD-04
-        
+
         Verify marking already-read message succeeds without error.
+
+        REALITY TEST: Uses actual Gmail IMAP connection.
         """
-        pytest.skip("Implementation pending")
+        # Get a message
+        result = real_server.email_fetch(limit=1)
+        if not result["messages"]:
+            pytest.skip("No messages in inbox to test")
+
+        msg = result["messages"][0]
+        test_uid = msg.uid
+
+        # Mark as read twice - second call should NOT raise
+        real_server.email_mark_read(folder="INBOX", uids=[test_uid])
+
+        # This should succeed without exception (idempotent behavior)
+        try:
+            real_server.email_mark_read(folder="INBOX", uids=[test_uid])
+        except Exception as e:
+            pytest.fail(
+                f"test_mark_read_idempotent FAILED | "
+                f"INV-MARKREAD-04 violated | "
+                f"Expected: Second mark_read on same message succeeds | "
+                f"Actual: Exception raised: {e} | "
+                f"Guidance: mark_read MUST be idempotent - calling twice is safe"
+            )
     
-    def test_mark_read_no_delete(self):
+    @reality
+    def test_mark_read_no_delete(self, real_server):
         """
         Contract: EmailMarkReadContract
         Enforces: INV-MARKREAD-03, INV-GLOBAL-01
         Adversarial: True
-        
+
         ADVERSARIAL TEST: Verify message count unchanged after mark_read.
-        
+
         Test procedure:
         1. Count messages in folder
         2. Call mark_read
         3. Count messages in folder again
         4. Assert count EXACTLY equal
+
+        REALITY TEST: Uses actual Gmail IMAP connection.
         """
-        pytest.skip("Implementation pending")
+        # Get initial message count and a message to mark
+        result1 = real_server.email_fetch(limit=100)  # Get enough to count
+        count_before = len(result1["messages"])
+
+        if count_before == 0:
+            pytest.skip("No messages in inbox to test")
+
+        test_uid = result1["messages"][0].uid
+
+        # Mark message as read
+        real_server.email_mark_read(folder="INBOX", uids=[test_uid])
+
+        # Count messages again
+        result2 = real_server.email_fetch(limit=100)
+        count_after = len(result2["messages"])
+
+        assert count_before == count_after, (
+            f"test_mark_read_no_delete FAILED | "
+            f"INV-MARKREAD-03, INV-GLOBAL-01 violated | "
+            f"Expected: Message count unchanged: {count_before} | "
+            f"Actual: Message count is now: {count_after} | "
+            f"Guidance: mark_read MUST NOT delete, move, or hide messages"
+        )
     
     def test_mark_read_uid_not_found_error(self):
         """
