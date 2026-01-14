@@ -191,12 +191,20 @@ class TestStartupContract:
         Verify credentials are NOT in environment variables.
         """
         # Credentials should not be stored in environment
-        assert "EMAIL_PASSWORD" not in os.environ
-        assert "secret123" not in os.environ.values()
-
-        # Credentials object should not expose password in repr
-        cred_repr = repr(mock_credentials)
-        # Note: dataclass(frozen=True) will show password, but it's in memory only
+        assert "EMAIL_PASSWORD" not in os.environ, (
+            f"test_startup_credentials_memory_only FAILED | "
+            f"INV-STARTUP-01 violated | "
+            f"Expected: EMAIL_PASSWORD not in environment | "
+            f"Actual: EMAIL_PASSWORD found in os.environ | "
+            f"Guidance: Credentials MUST be memory-only, never in env vars"
+        )
+        assert "secret123" not in os.environ.values(), (
+            f"test_startup_credentials_memory_only FAILED | "
+            f"INV-STARTUP-01 violated | "
+            f"Expected: Password value not in environment | "
+            f"Actual: Password found in os.environ.values() | "
+            f"Guidance: Credentials MUST be memory-only, never in env vars"
+        )
 
 
 # =============================================================================
@@ -225,13 +233,43 @@ class TestEmailFetchContract:
         result = connected_server.email_fetch(limit=10)
 
         # POST-FETCH-01: Returns dict with required keys
-        assert "messages" in result
-        assert "folder" in result
-        assert "uidvalidity" in result
-        assert "next_uid" in result
+        assert "messages" in result, (
+            f"test_fetch_basic FAILED | "
+            f"POST-FETCH-01 violated | "
+            f"Expected: result contains 'messages' key | "
+            f"Actual: keys are {list(result.keys())} | "
+            f"Guidance: email_fetch MUST return dict with 'messages' key"
+        )
+        assert "folder" in result, (
+            f"test_fetch_basic FAILED | "
+            f"POST-FETCH-01 violated | "
+            f"Expected: result contains 'folder' key | "
+            f"Actual: keys are {list(result.keys())} | "
+            f"Guidance: email_fetch MUST return dict with 'folder' key"
+        )
+        assert "uidvalidity" in result, (
+            f"test_fetch_basic FAILED | "
+            f"POST-FETCH-01 violated | "
+            f"Expected: result contains 'uidvalidity' key | "
+            f"Actual: keys are {list(result.keys())} | "
+            f"Guidance: email_fetch MUST return dict with 'uidvalidity' key"
+        )
+        assert "next_uid" in result, (
+            f"test_fetch_basic FAILED | "
+            f"POST-FETCH-01 violated | "
+            f"Expected: result contains 'next_uid' key | "
+            f"Actual: keys are {list(result.keys())} | "
+            f"Guidance: email_fetch MUST return dict with 'next_uid' key"
+        )
 
         # POST-FETCH-02: Messages match schema
-        assert isinstance(result["messages"], list)
+        assert isinstance(result["messages"], list), (
+            f"test_fetch_basic FAILED | "
+            f"POST-FETCH-02 violated | "
+            f"Expected: messages is a list | "
+            f"Actual: messages is {type(result['messages'])} | "
+            f"Guidance: email_fetch MUST return messages as list"
+        )
 
     def test_fetch_limit_respected(self, connected_server, mock_imap_client, sample_raw_email):
         """
@@ -253,7 +291,13 @@ class TestEmailFetchContract:
         result = connected_server.email_fetch(limit=10)
 
         # POST-FETCH-03: len(messages) <= limit
-        assert len(result["messages"]) <= 10
+        assert len(result["messages"]) <= 10, (
+            f"test_fetch_limit_respected FAILED | "
+            f"POST-FETCH-03 violated | "
+            f"Expected: len(messages) <= 10 | "
+            f"Actual: len(messages) = {len(result['messages'])} | "
+            f"Guidance: email_fetch MUST respect limit parameter"
+        )
 
     def test_fetch_uid_gt_filter(self, connected_server, mock_imap_client, sample_raw_email):
         """
@@ -276,7 +320,13 @@ class TestEmailFetchContract:
 
         # POST-FETCH-04: All returned messages have uid > uid_gt
         for msg in result["messages"]:
-            assert msg.uid > 200
+            assert msg.uid > 200, (
+                f"test_fetch_uid_gt_filter FAILED | "
+                f"POST-FETCH-04 violated | "
+                f"Expected: all message UIDs > 200 | "
+                f"Actual: message UID {msg.uid} <= 200 | "
+                f"Guidance: email_fetch with uid_gt MUST filter correctly"
+            )
 
     def test_fetch_date_range_filter(self, connected_server, mock_imap_client):
         """
@@ -294,7 +344,13 @@ class TestEmailFetchContract:
             date_before="2026-01-31T23:59:59Z",
         )
 
-        assert "messages" in result
+        assert "messages" in result, (
+            f"test_fetch_date_range_filter FAILED | "
+            f"POST-FETCH-05, POST-FETCH-06 violated | "
+            f"Expected: result contains 'messages' key | "
+            f"Actual: keys are {list(result.keys())} | "
+            f"Guidance: email_fetch with date range MUST return valid result"
+        )
 
     def test_fetch_ordering(self, connected_server, mock_imap_client, sample_raw_email):
         """
@@ -317,7 +373,13 @@ class TestEmailFetchContract:
 
         # POST-FETCH-07: Messages ordered by UID ascending
         uids = [msg.uid for msg in result["messages"]]
-        assert uids == sorted(uids)
+        assert uids == sorted(uids), (
+            f"test_fetch_ordering FAILED | "
+            f"POST-FETCH-07 violated | "
+            f"Expected: UIDs in ascending order {sorted(uids)} | "
+            f"Actual: UIDs are {uids} | "
+            f"Guidance: email_fetch MUST return messages ordered by UID ascending"
+        )
 
     def test_fetch_does_not_mark_read(self, connected_server, mock_imap_client):
         """
@@ -334,7 +396,16 @@ class TestEmailFetchContract:
         connected_server.email_fetch(limit=10)
 
         # Verify select_folder was called with readonly=True
-        mock_client.select_folder.assert_called_with("INBOX", readonly=True)
+        try:
+            mock_client.select_folder.assert_called_with("INBOX", readonly=True)
+        except AssertionError as e:
+            raise AssertionError(
+                f"test_fetch_does_not_mark_read FAILED | "
+                f"INV-FETCH-01 violated | "
+                f"Expected: select_folder called with readonly=True | "
+                f"Actual: {e} | "
+                f"Guidance: email_fetch MUST use readonly mode to prevent marking as read"
+            ) from e
 
     def test_fetch_no_body_logging(self, connected_server, mock_imap_client, sample_raw_email, caplog):
         """
@@ -358,7 +429,13 @@ class TestEmailFetchContract:
 
         # Verify message body NOT in logs
         log_text = caplog.text
-        assert "This is a test email body" not in log_text
+        assert "This is a test email body" not in log_text, (
+            f"test_fetch_no_body_logging FAILED | "
+            f"INV-FETCH-02, INV-GLOBAL-05 violated | "
+            f"Expected: message body NOT in logs | "
+            f"Actual: 'This is a test email body' found in log output | "
+            f"Guidance: email_fetch MUST NOT log message body content"
+        )
 
     def test_fetch_invalid_range_error(self, connected_server):
         """
@@ -402,12 +479,39 @@ class TestEmailMarkReadContract:
         result = connected_server.email_mark_read(folder="INBOX", uids=[100, 200])
 
         # POST-MARKREAD-01: Returns dict with marked, folder
-        assert "marked" in result
-        assert "folder" in result
-        assert result["folder"] == "INBOX"
+        assert "marked" in result, (
+            f"test_mark_read_basic FAILED | "
+            f"POST-MARKREAD-01 violated | "
+            f"Expected: result contains 'marked' key | "
+            f"Actual: keys are {list(result.keys())} | "
+            f"Guidance: email_mark_read MUST return dict with 'marked' key"
+        )
+        assert "folder" in result, (
+            f"test_mark_read_basic FAILED | "
+            f"POST-MARKREAD-01 violated | "
+            f"Expected: result contains 'folder' key | "
+            f"Actual: keys are {list(result.keys())} | "
+            f"Guidance: email_mark_read MUST return dict with 'folder' key"
+        )
+        assert result["folder"] == "INBOX", (
+            f"test_mark_read_basic FAILED | "
+            f"POST-MARKREAD-01 violated | "
+            f"Expected: folder == 'INBOX' | "
+            f"Actual: folder == '{result['folder']}' | "
+            f"Guidance: email_mark_read MUST return the folder it operated on"
+        )
 
         # POST-MARKREAD-04: add_flags called with \\Seen
-        mock_client.add_flags.assert_called_once_with([100, 200], [b"\\Seen"])
+        try:
+            mock_client.add_flags.assert_called_once_with([100, 200], [b"\\Seen"])
+        except AssertionError as e:
+            raise AssertionError(
+                f"test_mark_read_basic FAILED | "
+                f"POST-MARKREAD-04 violated | "
+                f"Expected: add_flags called with UIDs and \\Seen flag | "
+                f"Actual: {e} | "
+                f"Guidance: email_mark_read MUST add \\Seen flag via IMAP"
+            ) from e
 
     def test_mark_read_idempotent(self, connected_server, mock_imap_client):
         """
@@ -462,8 +566,26 @@ class TestEmailMarkReadContract:
         connected_server.email_mark_read(folder="INBOX", uids=[100])
 
         # Verify no delete/expunge methods called on underlying IMAP client
-        mock_client.delete_messages.assert_not_called()
-        mock_client.expunge.assert_not_called()
+        try:
+            mock_client.delete_messages.assert_not_called()
+        except AssertionError as e:
+            raise AssertionError(
+                f"test_mark_read_no_delete FAILED | "
+                f"INV-MARKREAD-03, INV-GLOBAL-01 violated | "
+                f"Expected: delete_messages never called | "
+                f"Actual: {e} | "
+                f"Guidance: email_mark_read MUST NOT delete messages"
+            ) from e
+        try:
+            mock_client.expunge.assert_not_called()
+        except AssertionError as e:
+            raise AssertionError(
+                f"test_mark_read_no_delete FAILED | "
+                f"INV-MARKREAD-03, INV-GLOBAL-01 violated | "
+                f"Expected: expunge never called | "
+                f"Actual: {e} | "
+                f"Guidance: email_mark_read MUST NOT expunge messages"
+            ) from e
 
     def test_mark_read_uid_not_found_error(self, connected_server, mock_imap_client):
         """
@@ -492,12 +614,30 @@ class TestEmailListFoldersContract:
         result = connected_server.email_list_folders()
 
         # POST-LISTFOLDERS-01: Returns dict with folders key
-        assert "folders" in result
+        assert "folders" in result, (
+            f"test_list_folders_basic FAILED | "
+            f"POST-LISTFOLDERS-01 violated | "
+            f"Expected: result contains 'folders' key | "
+            f"Actual: keys are {list(result.keys())} | "
+            f"Guidance: email_list_folders MUST return dict with 'folders' key"
+        )
 
         # POST-LISTFOLDERS-02: folders is list of FolderInfo
-        assert isinstance(result["folders"], list)
+        assert isinstance(result["folders"], list), (
+            f"test_list_folders_basic FAILED | "
+            f"POST-LISTFOLDERS-02 violated | "
+            f"Expected: folders is a list | "
+            f"Actual: folders is {type(result['folders'])} | "
+            f"Guidance: email_list_folders MUST return folders as list"
+        )
         for folder in result["folders"]:
-            assert isinstance(folder, FolderInfo)
+            assert isinstance(folder, FolderInfo), (
+                f"test_list_folders_basic FAILED | "
+                f"POST-LISTFOLDERS-02 violated | "
+                f"Expected: each folder is FolderInfo | "
+                f"Actual: folder is {type(folder)} | "
+                f"Guidance: each folder MUST be a FolderInfo object"
+            )
 
     def test_list_folders_complete(self, connected_server, mock_imap_client):
         """
@@ -517,8 +657,20 @@ class TestEmailListFoldersContract:
 
         # All 5 folders should be included
         folder_names = [f.name for f in result["folders"]]
-        assert "INBOX" in folder_names
-        assert "Sent" in folder_names
+        assert "INBOX" in folder_names, (
+            f"test_list_folders_complete FAILED | "
+            f"POST-LISTFOLDERS-03 violated | "
+            f"Expected: INBOX in folder names | "
+            f"Actual: folder names are {folder_names} | "
+            f"Guidance: email_list_folders MUST return ALL folders including INBOX"
+        )
+        assert "Sent" in folder_names, (
+            f"test_list_folders_complete FAILED | "
+            f"POST-LISTFOLDERS-03 violated | "
+            f"Expected: Sent in folder names | "
+            f"Actual: folder names are {folder_names} | "
+            f"Guidance: email_list_folders MUST return ALL folders including Sent"
+        )
 
 
 # =============================================================================
@@ -536,11 +688,29 @@ class TestEmailStatusContract:
         status = connected_server.email_status()
 
         # POST-STATUS-01: Returns ConnectionStatus
-        assert isinstance(status, ConnectionStatus)
+        assert isinstance(status, ConnectionStatus), (
+            f"test_status_when_connected FAILED | "
+            f"POST-STATUS-01 violated | "
+            f"Expected: status is ConnectionStatus | "
+            f"Actual: status is {type(status)} | "
+            f"Guidance: email_status MUST return ConnectionStatus object"
+        )
 
         # POST-STATUS-02: connected is True when connected
-        assert status.connected is True
-        assert status.protocol == EmailProtocol.IMAP
+        assert status.connected is True, (
+            f"test_status_when_connected FAILED | "
+            f"POST-STATUS-02 violated | "
+            f"Expected: connected == True when connected | "
+            f"Actual: connected == {status.connected} | "
+            f"Guidance: email_status MUST report connected=True when connected"
+        )
+        assert status.protocol == EmailProtocol.IMAP, (
+            f"test_status_when_connected FAILED | "
+            f"POST-STATUS-02 violated | "
+            f"Expected: protocol == IMAP | "
+            f"Actual: protocol == {status.protocol} | "
+            f"Guidance: email_status MUST report protocol as IMAP"
+        )
 
     def test_status_honest_disconnected(self):
         """
@@ -554,7 +724,13 @@ class TestEmailStatusContract:
         status = server.email_status()
 
         # INV-STATUS-04: connected=False when actually disconnected
-        assert status.connected is False
+        assert status.connected is False, (
+            f"test_status_honest_disconnected FAILED | "
+            f"INV-STATUS-04 violated | "
+            f"Expected: connected == False when not connected | "
+            f"Actual: connected == {status.connected} | "
+            f"Guidance: email_status MUST honestly report disconnected state"
+        )
 
 
 # =============================================================================
@@ -581,13 +757,25 @@ class TestGlobalInvariants:
 
         for method in server_methods:
             for pattern in forbidden_patterns:
-                assert pattern not in method.lower(), f"Forbidden method found: {method}"
+                assert pattern not in method.lower(), (
+                    f"test_global_no_send_capability FAILED | "
+                    f"INV-GLOBAL-02 violated | "
+                    f"Expected: no methods containing '{pattern}' | "
+                    f"Actual: found method '{method}' | "
+                    f"Guidance: Server MUST NOT have send/reply/forward capabilities"
+                )
 
         # Check client has no send methods
         client_methods = [m for m in dir(client) if not m.startswith("_")]
         for method in client_methods:
             for pattern in forbidden_patterns:
-                assert pattern not in method.lower(), f"Forbidden method found: {method}"
+                assert pattern not in method.lower(), (
+                    f"test_global_no_send_capability FAILED | "
+                    f"INV-GLOBAL-02 violated | "
+                    f"Expected: no methods containing '{pattern}' | "
+                    f"Actual: found method '{method}' | "
+                    f"Guidance: Client MUST NOT have send/reply/forward capabilities"
+                )
 
     def test_global_no_delete_capability(self):
         """
@@ -606,7 +794,13 @@ class TestGlobalInvariants:
             methods = [m for m in dir(obj) if not m.startswith("_")]
             for method in methods:
                 for pattern in forbidden_patterns:
-                    assert pattern not in method.lower(), f"Forbidden method found: {method}"
+                    assert pattern not in method.lower(), (
+                        f"test_global_no_delete_capability FAILED | "
+                        f"INV-GLOBAL-01 violated | "
+                        f"Expected: no methods containing '{pattern}' | "
+                        f"Actual: found method '{method}' | "
+                        f"Guidance: System MUST NOT have delete capabilities"
+                    )
 
     def test_global_no_move_capability(self):
         """
@@ -625,7 +819,13 @@ class TestGlobalInvariants:
             methods = [m for m in dir(obj) if not m.startswith("_")]
             for method in methods:
                 for pattern in forbidden_patterns:
-                    assert pattern not in method.lower(), f"Forbidden method found: {method}"
+                    assert pattern not in method.lower(), (
+                        f"test_global_no_move_capability FAILED | "
+                        f"INV-GLOBAL-03 violated | "
+                        f"Expected: no methods containing '{pattern}' | "
+                        f"Actual: found method '{method}' | "
+                        f"Guidance: System MUST NOT have move/copy capabilities"
+                    )
 
     def test_global_process_clears_credentials(self):
         """
@@ -707,7 +907,13 @@ class TestGlobalInvariants:
             password="secret",
             server="imap.example.com",
         )
-        assert creds.use_ssl is True, "TLS must be enabled by default"
+        assert creds.use_ssl is True, (
+            f"test_startup_tls_required FAILED | "
+            f"INV-STARTUP-04, INV-GLOBAL-09 violated | "
+            f"Expected: use_ssl == True by default | "
+            f"Actual: use_ssl == {creds.use_ssl} | "
+            f"Guidance: TLS MUST be enabled by default, no plaintext fallback"
+        )
 
         # Verify there's no way to disable TLS (no plaintext option)
         # The Credentials dataclass has use_ssl=True as default
@@ -731,8 +937,20 @@ class TestGlobalInvariants:
 
         source = inspect.getsource(EmailIMAPClient)
         # Ensure no certificate verification bypass
-        assert "check_hostname" not in source or "check_hostname=True" in source
-        assert "CERT_NONE" not in source
+        assert "check_hostname" not in source or "check_hostname=True" in source, (
+            f"test_startup_certificate_validated FAILED | "
+            f"INV-STARTUP-05 violated | "
+            f"Expected: check_hostname not disabled | "
+            f"Actual: check_hostname=False found in source | "
+            f"Guidance: Certificate hostname MUST be validated"
+        )
+        assert "CERT_NONE" not in source, (
+            f"test_startup_certificate_validated FAILED | "
+            f"INV-STARTUP-05 violated | "
+            f"Expected: CERT_NONE not used | "
+            f"Actual: CERT_NONE found in source | "
+            f"Guidance: Certificate verification MUST NOT be disabled"
+        )
 
 
 # =============================================================================
@@ -752,4 +970,10 @@ def test_contract_coverage():
     print(f"Clauses covered: {len(coverage['covered'])}")
 
     # Don't fail - just report coverage
-    assert coverage["test_count"] > 0
+    assert coverage["test_count"] > 0, (
+        f"test_contract_coverage FAILED | "
+        f"META violated | "
+        f"Expected: test_count > 0 | "
+        f"Actual: test_count == {coverage['test_count']} | "
+        f"Guidance: Tests must exist for contract coverage"
+    )
