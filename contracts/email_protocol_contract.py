@@ -236,7 +236,7 @@ class StartupContract(Protocol):
 
     PRE-STARTUP-01: biosecret CLI is available in PATH
     PRE-STARTUP-02: User has stored email credentials in macOS Keychain
-                    under key "email-mcp/{account_id}"
+                    under service "email-mcp" account "{account_id}"
     PRE-STARTUP-03: MCP process has entitlement to invoke biosecret
     PRE-STARTUP-04: Network connectivity to mail server is available
     PRE-STARTUP-05: Mail server supports TLS 1.2 or higher

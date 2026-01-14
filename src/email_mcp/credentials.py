@@ -35,7 +35,7 @@ def retrieve_credentials(account_id: str) -> Credentials:
     Retrieve credentials via biosecret CLI.
 
     PRE: biosecret CLI is available in PATH
-    PRE: User has stored credentials under key "email-mcp/{account_id}"
+    PRE: User has stored credentials under service "email-mcp" account "{account_id}"
 
     POST: Returns Credentials on success
 
@@ -45,7 +45,7 @@ def retrieve_credentials(account_id: str) -> Credentials:
     """
     try:
         result = subprocess.run(
-            ["biosecret", "get", f"email-mcp/{account_id}"],
+            ["biosecret", "get", "email-mcp", account_id],
             capture_output=True,
             text=True,
             timeout=30,

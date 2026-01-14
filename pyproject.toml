@@ -3,7 +3,7 @@ name = "email-mcp"
 version = "0.1.0"
 description = "Email Protocol MCP Server - Dumb pipe for AI agent email access"
 readme = "README.md"
-requires-python = ">=3.11"
+requires-python = ">=3.11,<3.14"
 license = {text = "MIT"}
 authors = [
     {name = "Ketema Harris", email = "ketema@ketema.net"}
