@@ -123,8 +123,20 @@ class TestStartupContract:
 
         # POST-STARTUP-04: connection_status.connected == True
         status = server.email_status()
-        assert status.connected is True
-        assert status.protocol == EmailProtocol.IMAP
+        assert status.connected is True, (
+            f"test_startup_biosecret_success FAILED | "
+            f"POST-STARTUP-04 violated | "
+            f"Expected: connected == True after successful connect | "
+            f"Actual: connected == {status.connected} | "
+            f"Guidance: Server MUST report connected=True after successful auth"
+        )
+        assert status.protocol == EmailProtocol.IMAP, (
+            f"test_startup_biosecret_success FAILED | "
+            f"POST-STARTUP-03 violated | "
+            f"Expected: protocol == IMAP | "
+            f"Actual: protocol == {status.protocol} | "
+            f"Guidance: Server MUST use IMAP protocol"
+        )
 
     def test_startup_biosecret_denied(self):
         """
