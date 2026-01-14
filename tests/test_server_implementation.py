@@ -401,15 +401,42 @@ class TestEmailMarkReadContract:
         """
         Contract: EmailMarkReadContract
         Enforces: INV-MARKREAD-04
+
+        Verify marking already-read message succeeds without error.
+        Idempotent = same operation multiple times produces same result.
         """
         mock_client = mock_imap_client.return_value
         mock_client.search.return_value = [100]
 
         # Marking same message twice should succeed
-        connected_server.email_mark_read(folder="INBOX", uids=[100])
-        connected_server.email_mark_read(folder="INBOX", uids=[100])
+        result1 = connected_server.email_mark_read(folder="INBOX", uids=[100])
+        result2 = connected_server.email_mark_read(folder="INBOX", uids=[100])
 
-        # No exception raised - idempotent
+        # ASSERTION: Both calls return success with same UID
+        # Per POST-MARKREAD-01: Returns dict with keys: marked, folder
+        # Per POST-MARKREAD-02: marked is list of UIDs successfully marked
+        assert result1["marked"] == [100], (
+            f"test_mark_read_idempotent FAILED | "
+            f"INV-MARKREAD-04 violated | "
+            f"Expected: first call marks UID 100 | "
+            f"Actual: got {result1.get('marked')} | "
+            f"Guidance: mark_read MUST return marked UIDs in 'marked' key"
+        )
+        assert result2["marked"] == [100], (
+            f"test_mark_read_idempotent FAILED | "
+            f"INV-MARKREAD-04 violated | "
+            f"Expected: second call also succeeds for same UID | "
+            f"Actual: got {result2.get('marked')} | "
+            f"Guidance: idempotent operation MUST succeed on repeat"
+        )
+        # ASSERTION: add_flags called twice (once per call)
+        assert mock_client.add_flags.call_count == 2, (
+            f"test_mark_read_idempotent FAILED | "
+            f"INV-MARKREAD-04 violated | "
+            f"Expected: add_flags called 2 times | "
+            f"Actual: called {mock_client.add_flags.call_count} times | "
+            f"Guidance: idempotent calls MUST each invoke the operation"
+        )
 
     def test_mark_read_no_delete(self, connected_server, mock_imap_client):
         """
@@ -588,24 +615,69 @@ class TestGlobalInvariants:
                 for pattern in forbidden_patterns:
                     assert pattern not in method.lower(), f"Forbidden method found: {method}"
 
-    def test_global_process_clears_credentials(self, mock_credentials):
+    def test_global_process_clears_credentials(self):
         """
         Contract: INV-GLOBAL-07
         Enforces: INV-GLOBAL-07
         Adversarial: True
 
-        Verify credentials cleared on disconnect.
+        Verify credentials not retained after connection.
+        Uses weakref to verify Credentials object can be garbage collected.
         """
+        import gc
+        import weakref
+
+        from src.email_mcp.credentials import Credentials
+
         with patch("src.email_mcp.imap_client.IMAPClient"):
             server = create_server()
-            server.connect(mock_credentials)
 
-            # Disconnect
+            # Create credentials and get weak reference
+            creds = Credentials(
+                username="test@example.com",
+                password="secret123",
+                server="imap.example.com",
+            )
+            creds_ref = weakref.ref(creds)
+
+            # Connect using credentials
+            server.connect(creds)
+
+            # Delete our reference to credentials
+            del creds
+
+            # Force garbage collection
+            gc.collect()
+
+            # ASSERTION: Credentials should be collectable (not retained by server)
+            # If server stored credentials, weakref would still be alive
+            assert creds_ref() is None, (
+                f"test_global_process_clears_credentials FAILED | "
+                f"INV-GLOBAL-07 violated | "
+                f"Expected: Credentials garbage collected after connect | "
+                f"Actual: Credentials still referenced (memory leak) | "
+                f"Guidance: Server MUST NOT retain Credentials object"
+            )
+
+            # Disconnect and verify state
             server.disconnect()
-
-            # Server should no longer be connected
             status = server.email_status()
-            assert status.connected is False
+            assert status.connected is False, (
+                f"test_global_process_clears_credentials FAILED | "
+                f"INV-GLOBAL-07 violated | "
+                f"Expected: connected=False after disconnect | "
+                f"Actual: connected={status.connected} | "
+                f"Guidance: disconnect MUST clear connection state"
+            )
+
+            # ASSERTION: Server's internal client reference is None
+            assert server._client is None, (
+                f"test_global_process_clears_credentials FAILED | "
+                f"INV-GLOBAL-07 violated | "
+                f"Expected: server._client=None after disconnect | "
+                f"Actual: server._client still exists | "
+                f"Guidance: disconnect MUST clear client reference"
+            )
 
     def test_startup_tls_required(self):
         """
