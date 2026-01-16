@@ -16,23 +16,32 @@ AUTHORITY: This file is the SINGLE authoritative source for email MCP behavior.
 """
 
 from dataclasses import dataclass
-from typing import Protocol, runtime_checkable
 from enum import Enum, auto
-
+from typing import Protocol, runtime_checkable
 
 # =============================================================================
 # DOMAIN TYPES
 # =============================================================================
 
+
 class EmailProtocol(Enum):
     """Supported email protocols."""
+
     IMAP = auto()
     POP3 = auto()
+
+
+class TLSRequirement(Enum):
+    """TLS version requirements."""
+
+    TLS_1_2 = auto()  # Minimum acceptable
+    TLS_1_3 = auto()  # Preferred
 
 
 @dataclass(frozen=True)
 class EmailAddress:
     """Structured email address."""
+
     name: str | None
     address: str
 
@@ -40,6 +49,7 @@ class EmailAddress:
 @dataclass(frozen=True)
 class Attachment:
     """Email attachment metadata and content."""
+
     filename: str
     mime_type: str
     size_bytes: int
@@ -49,6 +59,7 @@ class Attachment:
 @dataclass(frozen=True)
 class EmailMessage:
     """Complete email message structure per SMTP/IMAP specification."""
+
     uid: int
     message_id: str
     thread_id: str | None
@@ -70,6 +81,7 @@ class EmailMessage:
 @dataclass(frozen=True)
 class FolderInfo:
     """Mailbox folder metadata."""
+
     name: str
     message_count: int
     unread_count: int
@@ -79,18 +91,23 @@ class FolderInfo:
 @dataclass(frozen=True)
 class ConnectionStatus:
     """Current connection state."""
+
     connected: bool
     protocol: EmailProtocol
     server: str
     uptime_seconds: int
+    tls_version: str  # e.g., "TLSv1.3"
+    cipher: str  # e.g., "TLS_AES_256_GCM_SHA384"
 
 
 # =============================================================================
 # ERROR TYPES
 # =============================================================================
 
+
 class EmailMCPError(Exception):
     """Base error for all Email MCP operations."""
+
     code: str
     message: str
 
@@ -98,73 +115,101 @@ class EmailMCPError(Exception):
 class BiosecretDeniedError(EmailMCPError):
     """
     ERRORS-STARTUP-01: User cancelled biometric prompt.
-    
+
     RECOVERY: Fatal. Process must exit. Agent restarts MCP to retry.
     """
+
     code = "BIOSECRET_DENIED"
 
 
 class BiosecretNotFoundError(EmailMCPError):
     """
     ERRORS-STARTUP-02: No credentials stored under expected keychain key.
-    
+
     RECOVERY: Fatal. User must store credentials via biosecret before retry.
     """
+
     code = "BIOSECRET_NOT_FOUND"
 
 
 class AuthFailedError(EmailMCPError):
     """
     ERRORS-STARTUP-03: Credentials valid in keychain but rejected by mail server.
-    
+
     RECOVERY: Fatal. User must update stored credentials.
     """
+
     code = "AUTH_FAILED"
 
 
 class ConnectionFailedError(EmailMCPError):
     """
     ERRORS-STARTUP-04: Network unreachable or host not found.
-    
+
     RECOVERY: Fatal. Check network connectivity and retry.
     """
+
     code = "CONNECTION_FAILED"
+
+
+class TLSRequiredError(EmailMCPError):
+    """
+    ERRORS-STARTUP-05: Server does not support TLS 1.2+.
+
+    RECOVERY: Fatal. Server must be configured to support TLS 1.2 or higher.
+    """
+
+    code = "TLS_REQUIRED"
+
+
+class CertificateVerificationError(EmailMCPError):
+    """
+    ERRORS-STARTUP-06: Server certificate validation failed.
+
+    RECOVERY: Fatal. Server certificate must be valid and trusted by system CA.
+    """
+
+    code = "CERTIFICATE_VERIFICATION_FAILED"
 
 
 class NotConnectedError(EmailMCPError):
     """
     ERRORS-TOOL-01: Startup failed or connection dropped mid-session.
-    
+
     RECOVERY: Agent must restart MCP process.
     """
+
     code = "NOT_CONNECTED"
 
 
 class FolderNotFoundError(EmailMCPError):
     """
     ERRORS-TOOL-02: Specified folder does not exist on server.
-    
+
     RECOVERY: Agent should call email_list_folders to get valid folder names.
     """
+
     code = "FOLDER_NOT_FOUND"
 
 
 class InvalidRangeError(EmailMCPError):
     """
     ERRORS-TOOL-03: date_after is greater than date_before.
-    
+
     RECOVERY: Agent must correct date parameters.
     """
+
     code = "INVALID_RANGE"
 
 
 class UidNotFoundError(EmailMCPError):
     """
     ERRORS-TOOL-04: One or more UIDs do not exist in folder.
-    
+
     RECOVERY: Agent should refresh message list; UIDs may have been
     deleted by external client.
     """
+
     code = "UID_NOT_FOUND"
 
 
@@ -172,14 +217,15 @@ class UidNotFoundError(EmailMCPError):
 # STARTUP CONTRACT
 # =============================================================================
 
+
 @runtime_checkable
 class StartupContract(Protocol):
     """
     MCP Process Startup Behavior
-    
+
     Startup occurs automatically when MCP process is launched.
     Agent does not call this directly; it happens before tools are available.
-    
+
     SEQUENCE:
     1. MCP process starts
     2. MCP invokes biosecret for credential retrieval
@@ -187,29 +233,36 @@ class StartupContract(Protocol):
     4. Credentials loaded into memory
     5. IMAP/POP3 connection established
     6. MCP ready to accept tool calls
-    
+
     PRE-STARTUP-01: biosecret CLI is available in PATH
     PRE-STARTUP-02: User has stored email credentials in macOS Keychain
                     under key "email-mcp/{account_id}"
     PRE-STARTUP-03: MCP process has entitlement to invoke biosecret
     PRE-STARTUP-04: Network connectivity to mail server is available
-    
+    PRE-STARTUP-05: Mail server supports TLS 1.2 or higher
+    PRE-STARTUP-06: Mail server certificate is valid and trusted
+
     POST-STARTUP-01: On successful biometric auth, credentials exist in memory
     POST-STARTUP-02: IMAP or POP3 connection is established and authenticated
     POST-STARTUP-03: MCP server is ready to accept tool calls
     POST-STARTUP-04: connection_status.connected == True
-    
+
     INV-STARTUP-01 (Credential Isolation): Credentials held in memory only,
                     never written to disk, environment variables, or logs
     INV-STARTUP-02 (Single Session): One authenticated session per process
     INV-STARTUP-03 (Fatal Errors): All startup errors terminate process
-    
+    INV-STARTUP-04 (Transport Security): Connection MUST use TLS 1.2+. No fallback.
+    INV-STARTUP-05 (Certificate Validation): Server cert validated against system CA.
+
     ERRORS:
     - BIOSECRET_DENIED: User cancelled biometric prompt → process exits
     - BIOSECRET_NOT_FOUND: No credentials under expected key → process exits
     - AUTH_FAILED: Server rejected credentials → process exits
     - CONNECTION_FAILED: Network unreachable → process exits
+    - TLS_REQUIRED: Server doesn't support TLS 1.2+ → process exits
+    - CERTIFICATE_VERIFICATION_FAILED: Invalid certificate → process exits
     """
+
     pass
 
 
@@ -217,13 +270,14 @@ class StartupContract(Protocol):
 # TOOL CONTRACTS
 # =============================================================================
 
+
 @runtime_checkable
 class EmailFetchContract(Protocol):
     """
     Tool: email_fetch
-    
+
     Retrieve messages from a mailbox folder with filtering options.
-    
+
     PRE-FETCH-01: MCP process startup completed successfully (connected)
     PRE-FETCH-02: folder is valid folder name returned by email_list_folders,
                   or "INBOX" (always valid)
@@ -233,7 +287,7 @@ class EmailFetchContract(Protocol):
                   date_after <= date_before
     PRE-FETCH-06: limit is positive integer, 1 <= limit <= 100
     PRE-FETCH-07: If provided, uid_gt is non-negative integer
-    
+
     POST-FETCH-01: Returns dict with keys: messages, folder, uidvalidity, next_uid
     POST-FETCH-02: messages is list of EmailMessage matching ALL filter criteria
     POST-FETCH-03: len(messages) <= limit
@@ -243,19 +297,19 @@ class EmailFetchContract(Protocol):
     POST-FETCH-07: messages ordered by uid ascending
     POST-FETCH-08: uidvalidity matches current folder UIDVALIDITY
     POST-FETCH-09: next_uid is server's predicted next UID for folder
-    
+
     INV-FETCH-01 (Read-Only): Fetch MUST NOT modify message flags
     INV-FETCH-02 (No Side Effects): No logging of message bodies or attachments
     INV-FETCH-03 (Deterministic): Same inputs + same server state = same outputs
     INV-FETCH-04 (State Isolation): Fetch does not affect other folders
     INV-FETCH-05 (Exception Safety): On error, no partial state changes
-    
+
     ERRORS:
     - NOT_CONNECTED: Startup failed or connection dropped
     - FOLDER_NOT_FOUND: Specified folder does not exist
     - INVALID_RANGE: date_after > date_before
     """
-    
+
     def email_fetch(
         self,
         *,
@@ -273,31 +327,31 @@ class EmailFetchContract(Protocol):
 class EmailMarkReadContract(Protocol):
     """
     Tool: email_mark_read
-    
+
     Mark specified messages as read (set \\Seen flag).
-    
+
     PRE-MARKREAD-01: MCP process startup completed successfully (connected)
     PRE-MARKREAD-02: folder is valid folder name
     PRE-MARKREAD-03: uids is non-empty list of positive integers
     PRE-MARKREAD-04: All UIDs in uids exist in specified folder
-    
+
     POST-MARKREAD-01: Returns dict with keys: marked, folder
     POST-MARKREAD-02: marked is list of UIDs that were successfully marked
     POST-MARKREAD-03: len(marked) == len(uids) (all or nothing)
     POST-MARKREAD-04: All messages with UIDs in marked now have \\Seen flag
-    
+
     INV-MARKREAD-01 (Targeted Mutation): ONLY \\Seen flag modified
     INV-MARKREAD-02 (Scope Isolation): Only specified UIDs affected
     INV-MARKREAD-03 (No Delete): Message count unchanged after operation
     INV-MARKREAD-04 (Idempotent): Marking already-read message succeeds
     INV-MARKREAD-05 (Exception Safety): On error, no UIDs partially marked
-    
+
     ERRORS:
     - NOT_CONNECTED: Startup failed or connection dropped
     - FOLDER_NOT_FOUND: Specified folder does not exist
     - UID_NOT_FOUND: One or more UIDs do not exist (external deletion)
     """
-    
+
     def email_mark_read(
         self,
         *,
@@ -312,26 +366,26 @@ class EmailMarkReadContract(Protocol):
 class EmailListFoldersContract(Protocol):
     """
     Tool: email_list_folders
-    
+
     List all available mailbox folders with metadata.
-    
+
     PRE-LISTFOLDERS-01: MCP process startup completed successfully (connected)
-    
+
     POST-LISTFOLDERS-01: Returns dict with key: folders
     POST-LISTFOLDERS-02: folders is list of FolderInfo
     POST-LISTFOLDERS-03: Every folder accessible to authenticated user is included
     POST-LISTFOLDERS-04: message_count and unread_count reflect current server state
     POST-LISTFOLDERS-05: uidvalidity is current UIDVALIDITY for each folder
-    
+
     INV-LISTFOLDERS-01 (Read-Only): No server state modified
     INV-LISTFOLDERS-02 (No Side Effects): No logging, no metrics
     INV-LISTFOLDERS-03 (Complete): All folders returned, no filtering
     INV-LISTFOLDERS-04 (Exception Safety): On error, no partial results
-    
+
     ERRORS:
     - NOT_CONNECTED: Startup failed or connection dropped
     """
-    
+
     def email_list_folders(self) -> dict:
         """List all mailbox folders."""
         ...
@@ -341,28 +395,28 @@ class EmailListFoldersContract(Protocol):
 class EmailStatusContract(Protocol):
     """
     Tool: email_status
-    
+
     Return current connection status. Health check for agent.
-    
+
     PRE-STATUS-01: MCP process is running (may or may not be connected)
-    
+
     POST-STATUS-01: Returns ConnectionStatus dataclass
     POST-STATUS-02: connected is True iff startup succeeded and connection alive
     POST-STATUS-03: protocol is the active protocol (IMAP or POP3)
     POST-STATUS-04: server is the connected mail server hostname
     POST-STATUS-05: uptime_seconds is seconds since successful startup
-    
+
     INV-STATUS-01 (Read-Only): No server state modified
     INV-STATUS-02 (No Side Effects): No external calls to check status
     INV-STATUS-03 (Always Succeeds): If callable, returns valid status
     INV-STATUS-04 (Honest): connected reflects actual connection state
-    
+
     ERRORS: None
-    
+
     NOTE: If this tool is callable, the process is running. If connected=False,
     startup failed but process hasn't exited yet (edge case during shutdown).
     """
-    
+
     def email_status(self) -> ConnectionStatus:
         """Return connection status."""
         ...
@@ -394,6 +448,10 @@ INV-GLOBAL-07 (Process Termination Clears Credentials): On process exit
 
 INV-GLOBAL-08 (Single Connection): One mail server connection per process.
              No multiplexing, no connection pooling.
+
+INV-GLOBAL-09 (Transport Security): ALL connections MUST use TLS 1.2+.
+             Plaintext and SSL 3.0 FORBIDDEN. No config to disable.
+             Certificate verification uses system CA store.
 """
 
 
@@ -450,7 +508,6 @@ TEST_CASES = {
         "adversarial": True,
         "description": "Verify credentials not in env vars, disk, or logs",
     },
-    
     # Fetch tests
     "test_fetch_basic": {
         "contract": "EmailFetchContract",
@@ -492,7 +549,6 @@ TEST_CASES = {
         "contract": "EmailFetchContract",
         "enforces": ["ERRORS: FOLDER_NOT_FOUND"],
     },
-    
     # Mark read tests
     "test_mark_read_basic": {
         "contract": "EmailMarkReadContract",
@@ -512,7 +568,6 @@ TEST_CASES = {
         "contract": "EmailMarkReadContract",
         "enforces": ["ERRORS: UID_NOT_FOUND"],
     },
-    
     # List folders tests
     "test_list_folders_basic": {
         "contract": "EmailListFoldersContract",
@@ -522,7 +577,6 @@ TEST_CASES = {
         "contract": "EmailListFoldersContract",
         "enforces": ["POST-LISTFOLDERS-03", "INV-LISTFOLDERS-03"],
     },
-    
     # Status tests
     "test_status_when_connected": {
         "contract": "EmailStatusContract",
@@ -534,7 +588,6 @@ TEST_CASES = {
         "adversarial": True,
         "description": "Verify connected=False when actually disconnected",
     },
-    
     # Global invariant tests
     "test_global_no_send_capability": {
         "contract": "INV-GLOBAL-02",
@@ -559,6 +612,19 @@ TEST_CASES = {
         "enforces": ["INV-GLOBAL-07"],
         "adversarial": True,
         "description": "Verify credentials not recoverable after process exit",
+    },
+    # TLS security tests
+    "test_startup_tls_required": {
+        "contract": "StartupContract",
+        "enforces": ["INV-STARTUP-04", "INV-GLOBAL-09"],
+        "adversarial": True,
+        "description": "Verify TLS 1.2+ required, no plaintext fallback",
+    },
+    "test_startup_certificate_validated": {
+        "contract": "StartupContract",
+        "enforces": ["INV-STARTUP-05"],
+        "adversarial": True,
+        "description": "Verify server certificate validated against system CA",
     },
 }
 
